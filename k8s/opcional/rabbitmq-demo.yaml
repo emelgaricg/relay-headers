@@ -1,0 +1,80 @@
+# OPCIONAL: un RabbitMQ sencillo para practicar si no tiene uno disponible.
+# Solo para la clase: sin persistencia (emptyDir), una réplica, credenciales de ejemplo.
+# No crea vhosts, colas ni exchanges: eso se hace a mano en la clase.
+#
+#   kubectl apply -f k8s/00-namespace.yaml -f k8s/opcional/rabbitmq-demo.yaml
+#   kubectl -n clase-k8s port-forward svc/rabbitmq 15672:15672
+#   Consola: http://localhost:15672   usuario: admin   clave: admin-clase
+apiVersion: v1
+kind: Secret
+metadata:
+  name: rabbitmq-admin
+  namespace: clase-k8s
+type: Opaque
+stringData:
+  RABBITMQ_DEFAULT_USER: "admin"
+  RABBITMQ_DEFAULT_PASS: "admin-clase"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rabbitmq
+  namespace: clase-k8s
+  labels:
+    app: rabbitmq
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: rabbitmq
+  template:
+    metadata:
+      labels:
+        app: rabbitmq
+    spec:
+      containers:
+        - name: rabbitmq
+          image: rabbitmq:3.13-management
+          imagePullPolicy: IfNotPresent
+          envFrom:
+            - secretRef:
+                name: rabbitmq-admin
+          ports:
+            - name: amqp
+              containerPort: 5672
+            - name: consola
+              containerPort: 15672
+          readinessProbe:
+            exec:
+              command: ["rabbitmq-diagnostics", "-q", "check_port_connectivity"]
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            timeoutSeconds: 10
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              memory: 512Mi
+          volumeMounts:
+            - name: datos
+              mountPath: /var/lib/rabbitmq
+      volumes:
+        - name: datos
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: rabbitmq
+  namespace: clase-k8s
+spec:
+  selector:
+    app: rabbitmq
+  ports:
+    - name: amqp
+      port: 5672
+      targetPort: amqp
+    - name: consola
+      port: 15672
+      targetPort: consola

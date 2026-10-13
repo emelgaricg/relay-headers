@@ -1,0 +1,90 @@
+# Construye la imagen y la publica en registries PÚBLICOS.
+#
+#   - GitHub Container Registry (ghcr.io): siempre. No necesita configurar ningún
+#     secret: usa el GITHUB_TOKEN que GitHub genera solo en cada ejecución.
+#   - Docker Hub: opcional. Se activa si define en el repositorio
+#       Settings > Secrets and variables > Actions
+#         Variable  DOCKERHUB_USUARIO  (su usuario u organización de Docker Hub)
+#         Secret    DOCKERHUB_TOKEN    (Access Token con permiso Read & Write)
+#
+# Cómo publicar una versión:
+#   git tag v1.0.0 && git push origin v1.0.0
+#   -> ghcr.io/<usuario>/relay-headers:1.0.0  y  :1.0
+name: publicar-imagen
+
+on:
+  push:
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  verificar:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: app/go.mod
+          cache-dependency-path: app/go.sum
+      - run: gofmt -l . | (! grep .)   # falla si hay archivos sin formatear
+      - run: go vet ./...
+      - run: go build ./...
+
+  publicar:
+    needs: verificar
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # QEMU + Buildx: permiten construir para amd64 y arm64 (Mac con chip M, Raspberry, Graviton).
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Login en GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Login en Docker Hub (opcional)
+        if: vars.DOCKERHUB_USUARIO != ''
+        uses: docker/login-action@v3
+        with:
+          username: ${{ vars.DOCKERHUB_USUARIO }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      # Calcula nombres y etiquetas (convierte el usuario a minúsculas, como exige el registry).
+      - name: Nombres y etiquetas
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: |
+            ghcr.io/${{ github.repository_owner }}/relay-headers
+            name=docker.io/${{ vars.DOCKERHUB_USUARIO }}/relay-headers,enable=${{ vars.DOCKERHUB_USUARIO != '' }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=ref,event=branch
+            type=sha,format=short
+
+      - name: Construir y publicar
+        uses: docker/build-push-action@v6
+        with:
+          context: app
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: VERSION=${{ github.ref_name }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

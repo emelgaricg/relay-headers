@@ -1,0 +1,5 @@
+/app/relay-headers
+*.log
+.DS_Store
+.idea/
+.vscode/

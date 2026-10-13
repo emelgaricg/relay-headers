@@ -1,0 +1,80 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: relay-headers
+  namespace: clase-k8s
+  labels:
+    app: relay-headers
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: relay-headers
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  template:
+    metadata:
+      labels:
+        app: relay-headers
+    spec:
+      # Tiempo para terminar el mensaje en curso tras el SIGTERM.
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: relay-headers
+          # Imagen pública: no se necesita imagePullSecrets.
+          # Cambie USUARIO por su usuario u organización de GitHub (en minúsculas).
+          image: ghcr.io/USUARIO/relay-headers:1.0.0
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8080
+          # Todas las claves del ConfigMap y del Secret se vuelven variables de entorno.
+          envFrom:
+            - configMapRef:
+                name: relay-headers-config
+            - secretRef:
+                name: relay-headers-credenciales
+          # Downward API: Kubernetes le dice al contenedor en qué namespace corre.
+          # El servicio lo usa para imprimir el comando exacto de reinicio.
+          env:
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+          # LIVENESS: "¿el proceso está vivo?". Responde 200 aunque falte configuración,
+          # así Kubernetes NO reinicia el pod en bucle (CrashLoopBackOff).
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          # READINESS: "¿está procesando mensajes?". Responde 503 mientras espera una
+          # corrección o reconecta. El pod se ve 0/1 READY en `kubectl get pods`.
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: http
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              cpu: 200m
+              memory: 64Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]

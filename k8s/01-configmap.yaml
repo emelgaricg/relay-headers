@@ -1,0 +1,34 @@
+# ConfigMap: datos NO sensibles. El Deployment los inyecta como variables de entorno.
+# IMPORTANTE: las variables de entorno solo se leen al arrancar el contenedor.
+# Si edita este ConfigMap, reinicie:  kubectl -n clase-k8s rollout restart deployment/relay-headers
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: relay-headers-config
+  namespace: clase-k8s
+  labels:
+    app: relay-headers
+data:
+  # ---------- ORIGEN: de dónde se consumen los mensajes ----------
+  ORIGEN_HOST: "rabbitmq.clase-k8s.svc.cluster.local"   # nombre DNS del Service de RabbitMQ (o IP/host externo)
+  ORIGEN_PUERTO: "5672"                                 # 5671 si usa TLS
+  ORIGEN_VHOST: "/ventas"
+  ORIGEN_COLA: "entrada"
+  ORIGEN_TLS: "false"
+
+  # ---------- DESTINO: exchange tipo headers ----------
+  # Si no define DESTINO_HOST / DESTINO_PUERTO / DESTINO_VHOST, se usan los del origen.
+  # Descomente para publicar en otro servidor:
+  # DESTINO_HOST: "otro-rabbitmq.ejemplo.local"
+  # DESTINO_PUERTO: "5672"
+  # DESTINO_TLS: "false"
+  DESTINO_VHOST: "/procesados"
+  DESTINO_EXCHANGE: "salida"
+  DESTINO_ROUTING_KEY: ""            # un exchange headers ignora la routing key
+
+  # ---------- Comportamiento ----------
+  PREFETCH: "10"                     # mensajes que RabbitMQ entrega por adelantado
+  REINTENTO_SEGUNDOS: "5"            # espera entre reintentos ante errores de red
+  RECORDATORIO_SEGUNDOS: "60"        # cada cuánto se repite el aviso de "acción requerida"
+  SIN_RUTA: "esperar"                # esperar | descartar (mensajes sin binding que coincida)
+  TZ: "America/Guatemala"            # hora local en los logs

@@ -1,0 +1,6 @@
+# Namespace de la clase. Opcional: puede usar el que ya tenga y quitar
+# "namespace: clase-k8s" de los demás archivos.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: clase-k8s
